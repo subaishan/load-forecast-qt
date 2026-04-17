@@ -10,6 +10,7 @@ from main_window import MainWindow
 #     pyside6-rcc resources.qrc -o resources_rc.py 
 #     pyinstaller --onedir --windowed --name 电负荷预测上位机 --add-data "config.json;." --add-data "icons;icons" main.py
 
+# 测试
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = MainWindow()
