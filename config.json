@@ -1,0 +1,25 @@
+{
+  "data_source": {
+    "type": "gprs",
+    "serial": {
+      "port": "",
+      "baudrate": 9600,
+      "timeout": 1
+    },
+    "gprs": {
+      "host": "39.105.18.152",
+      "port": 1883,
+      "username": "QtAppUser",
+      "password": "3774691Cjjdf",
+      "topic": "stm32/sensor",
+      "timeout": 1
+    }
+  },
+  "display": {
+    "update_interval_ms": 1000,
+    "plot_data_length": 60,
+    "plot_y_auto_range": true,
+    "plot_y_min": 0,
+    "plot_y_max": 200
+  }
+}
