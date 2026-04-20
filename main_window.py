@@ -1,12 +1,14 @@
 import sys
 import time
 from datetime import datetime
-from PySide6.QtWidgets import QMainWindow
+from PySide6.QtWidgets import QMainWindow, QMessageBox
 from PySide6.QtCore import QTimer, Qt
 import pyqtgraph as pg
 from ui_form import Ui_MainWindow
 from settings_dialog import SettingsDialog
 from data_processor import DataProcessor
+from export_dialog import ExportDialog
+from data_manager import DataManager
 import resources_rc
 
 class MainWindow(QMainWindow):
@@ -19,6 +21,9 @@ class MainWindow(QMainWindow):
         
         # 创建数据处理器
         self.data_proc = DataProcessor()
+
+        # 创建数据管理器
+        self.data_manager = DataManager(max_size=28800)
         
         # 初始化曲线图
         self.init_plot()
@@ -26,12 +31,16 @@ class MainWindow(QMainWindow):
         # 连接设置按钮
         if hasattr(self.ui, 'btn_settings'):
             self.ui.btn_settings.clicked.connect(self.open_settings)
+
+        # 连接导出按钮
+        if hasattr(self.ui, 'btn_export_data'):
+            self.ui.btn_export_data.clicked.connect(self.open_export_dialog)
         
         # 数据存储
         self.max_points = 3600  # 最多存储1小时（3600秒）
         self.time_data = []     # 存储时间戳（秒）
-        self.power_real = []    # 实时功率
-        self.power_predict = [] # 预测功率
+        self.power_real = []    # 实际电负荷
+        self.power_predict = [] # 预测电负荷
         
         # 最后收到数据的时间
         self.last_data_time = None
@@ -57,7 +66,7 @@ class MainWindow(QMainWindow):
         self.plot_widget.setBackground('w')
         self.plot_widget.setLabel('bottom','时间')
         self.plot_widget.setLabel('left', '功率', units='W')
-        self.plot_widget.setTitle("功率监测曲线")
+        self.plot_widget.setTitle("电负荷监测曲线")
         self.plot_widget.showGrid(x=True, y=True, alpha=0.5)
 
         # 启用鼠标交互
@@ -78,13 +87,13 @@ class MainWindow(QMainWindow):
         # 曲线1：实时功率（红色实线）
         self.curve_real = self.plot_widget.plot(
             pen=pg.mkPen(color='r', width=2),
-            name='实时功率'
+            name='实时电负荷'
         )
 
         # 曲线2：预测功率（蓝色虚线）
         self.curve_predict = self.plot_widget.plot(
             pen=pg.mkPen(color='b', width=2, style=Qt.DashLine),
-            name='预测功率'
+            name='预测电负荷'
         )
 
         # 设置 X 轴时间格式化（显示 时:分:秒）
@@ -120,19 +129,51 @@ class MainWindow(QMainWindow):
                 self.time_data = self.time_data[-self.max_points:]
                 self.power_real = self.power_real[-self.max_points:]
                 self.power_predict = self.power_predict[-self.max_points:]
-            
+
             # 更新状态栏
-            self.statusBar.showMessage(f"正在接收数据 | 功率: {power:.1f} W")
+            self.statusBar.showMessage(f"正在接收数据 | 电负荷: {power:.1f} W")
             
+            # 将数据添加到数据管理器
+            self.data_manager.add_data(data)
+
             # 更新左侧标签
             self.update_labels(data)
         else:
             # 没有新数据
             if self.last_data_time is None:
                 self.statusBar.showMessage("等待数据...")
+                power = 0
+                predict = 0
+
+                self.time_data.append(current_time)
+                self.power_real.append(power)
+                self.power_predict.append(predict)
+                
+                # 限制数据量
+                if len(self.time_data) > self.max_points:
+                    self.time_data = self.time_data[-self.max_points:]
+                    self.power_real = self.power_real[-self.max_points:]
+                    self.power_predict = self.power_predict[-self.max_points:]
+                    
+                self.update_label_error()
             else:
                 elapsed = current_time - self.last_data_time
                 if elapsed > self.data_timeout:
+                    power = 0
+                    predict = 0
+
+                    self.time_data.append(current_time)
+                    self.power_real.append(power)
+                    self.power_predict.append(predict)
+
+                    # 限制数据量
+                    if len(self.time_data) > self.max_points:
+                        self.time_data = self.time_data[-self.max_points:]
+                        self.power_real = self.power_real[-self.max_points:]
+                        self.power_predict = self.power_predict[-self.max_points:]
+
+                    self.update_label_error()
+
                     self.statusBar.showMessage(f"数据超时 ({elapsed:.0f}秒未收到数据)")
                 else:
                     self.statusBar.showMessage("等待数据...")
@@ -146,7 +187,35 @@ class MainWindow(QMainWindow):
             max_time = time.time()
             min_time = max_time - 60
             self.plot_widget.setXRange(min_time, max_time)
+
+    def label_default(self):
+        """返回标签的默认值"""
+        return {
+            'voltage': 0,
+            'current': 0,
+            'power': 0,
+            'power_now': 0,
+            'cumulative_energy': 0,
+            'power_15min': 0,
+            'power_60min': 0
+        }
     
+    def update_label_error(self):
+        """更新标签为错误状态"""
+        """更新左侧标签"""
+        if hasattr(self.ui, 'label_voltage'):
+            self.ui.label_voltage.setText(f"--- V")
+        if hasattr(self.ui, 'label_current'):
+            self.ui.label_current.setText(f"--- A")
+        if hasattr(self.ui, 'label_power'):
+            self.ui.label_power.setText(f"--- W")
+        if hasattr(self.ui, 'label_energy'):
+            self.ui.label_energy.setText(f"--- kWh")
+        if hasattr(self.ui, 'label_power_15min'):
+            self.ui.label_power_15min.setText(f"--- W")
+        if hasattr(self.ui, 'label_power_60min'):
+            self.ui.label_power_60min.setText(f"--- W")
+
     def update_labels(self, data):
         """更新左侧标签"""
         if hasattr(self.ui, 'label_voltage'):
@@ -180,6 +249,29 @@ class MainWindow(QMainWindow):
         dialog = SettingsDialog(self)
         dialog.config_saved.connect(self.on_config_saved)
         dialog.exec()
+
+    def open_export_dialog(self):
+        """打开导出数据对话框"""
+        # 检查是否有数据管理器
+        if not hasattr(self, 'data_manager'):
+            QMessageBox.warning(self, "提示", "数据管理器未初始化")
+            return
+        
+        # 检查是否有数据
+        if self.data_manager.get_data_count() == 0:
+            QMessageBox.warning(self, "提示", "没有数据可导出")
+            return
+        
+        # 创建并显示对话框（非模态）
+        self.export_dialog = ExportDialog(self.data_manager, self)
+        self.export_dialog.export_completed.connect(self.on_export_completed)
+        self.export_dialog.show()
+
+    def on_export_completed(self, file_path):
+        """导出完成回调"""
+        print(f"导出完成: {file_path}")
+        # 可以在这里添加其他逻辑，如状态栏提示
+        self.statusBar.showMessage(f"数据已导出到: {file_path}", 3000)
     
     def on_config_saved(self):
         """配置保存后的回调"""

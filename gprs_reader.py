@@ -65,7 +65,11 @@ class GprsReader:
             return None
         
         # 返回最新收到的数据
-        return self.latest_data
+        data = self.latest_data
+
+        # 清空，等待新数据
+        self.latest_data = None
+        return data
     
     def get_power(self):
         """获取实时功率"""
